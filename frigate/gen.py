@@ -1,8 +1,21 @@
+"""Loads a chart and its contents into a dictionary .
+
+Raises:
+    RuntimeError: [description]
+
+Returns:
+    [type]: [description]
+
+Yields:
+    [type]: [description]
+"""
+# pylint: disable=redefined-builtin
 import json
 import os.path
-import tempfile
+import pathlib
 import shutil
 import subprocess
+import tempfile
 
 from jinja2 import Environment, FileSystemLoader
 from ruamel.yaml import YAML
@@ -29,17 +42,20 @@ def load_chart(chartdir, root=None):
         values (dict): Contents of `values.yaml` loaded into a dict.
 
     """
-    with open(os.path.join(chartdir, "values.yaml"), "r") as fh:
-        values = yaml.load(fh.read())
-    with open(os.path.join(chartdir, "Chart.yaml"), "r") as fh:
-        chart = yaml.load(fh.read())
+    chart_path = pathlib.Path(f'{chartdir}/Chart.yaml')
+    with chart_path.open('r', encoding='utf-8') as chart_fh:
+        chart = yaml.load(chart_fh)
+
+    values_path = pathlib.Path(f'{chartdir}/values.yaml')
+    with values_path.open('r', encoding='utf-8') as values_fh:
+        values = yaml.load(values_fh.read())
     return chart, list(traverse(values, root=root))
 
 
 def load_chart_with_dependencies(chartdir, root=None):
-    """
-    Load and return dictionaries representing Chart.yaml and values.yaml from
-    the Helm chart. If Chart.yaml declares dependencies, recursively merge in
+    """Load and return dictionaries representing Chart.yaml and values.yaml from the Helm chart.
+
+    If Chart.yaml declares dependencies, recursively merge in
     their values as well.
 
     Args:
@@ -202,7 +218,8 @@ def traverse(tree, root=None):
         root (list, optional): The root of the namespace we are currently at. Used for recursion.
 
     Yields:
-        list(param, comment, value): Each namespaced parameter (str), the comment (str) and value (obj).
+        list(param, comment, value): Each namespaced parameter (str),
+                                     the comment (str) and value (obj).
 
     """
     if root is None:
@@ -228,7 +245,7 @@ def traverse(tree, root=None):
             yield [param, comment, json.dumps(default)]
 
 
-def gen(chartdir, output_format, credits=True, deps=True):
+def gen(chartdir, output_format, deps, credits=True):
     """Generate documentation for a Helm chart.
 
     Generate documentation for a Helm chart given the path to a chart and a
@@ -237,16 +254,17 @@ def gen(chartdir, output_format, credits=True, deps=True):
     Args:
         chartdir (str): Path to Helm chart
         output_format (str): Output format (maps to jinja templates in frigate)
-        credits (bool): Show Frigate credits in documentation
         deps (bool): Read values from chart dependencies and include them in the config table
+        credits (bool): Show Frigate credits in documentation
 
     Returns:
         str: Rendered documentation for the Helm chart
 
     """
-    chart, values = (
-        load_chart_with_dependencies(chartdir) if deps else load_chart(chartdir)
-    )
+    if deps:
+        chart, values = load_chart_with_dependencies(chartdir)
+    else:
+        chart, values = load_chart(chartdir)
 
     templates = Environment(loader=FileSystemLoader([chartdir, TEMPLATES_PATH]))
     if os.path.isfile(os.path.join(chartdir, DOTFILE_NAME)):
